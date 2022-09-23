@@ -1,0 +1,365 @@
+##***************************************************************
+## ** 所属主题: 用户画像
+## ** 功能描述:
+## ** 创建者  : lq@kidneytec.com
+## ** 创建日期: 20220920
+## ** 修改日志:
+## ** 修改日期:
+import json
+
+from odps import ODPS, options
+from odps.df import DataFrame
+import pandas as pd
+import time
+from datetime import datetime
+# import numpy as np
+import traceback
+import math
+import uuid
+options.tunnel.use_instance_tunnel = True;
+access_id = 'LTAI5t79ZWE4bcUF57W2E7Lg'
+access_secret = 'zkJK5UiRes4HzZgMQhfMZfn7jAEWZJ'
+project_name = 'kidneydataworks_dev'##开发版
+endpoint = 'http://service.cn-beijing.maxcompute.aliyun.com/api'
+odps = ODPS(access_id, access_secret, project_name, endpoint)
+
+
+in_table_name_pid = "dim_patient_info_all"
+
+# 静态分析
+in_table_static_status = "dws_pl_user_static_status_info_all"
+
+# app行为分析
+in_table_app_status = "dws_pl_user_app_status_info_all"
+in_table_app_open = "ads_pl_user_app_open_period_all"
+
+# 沟通行为分析
+in_table_dialog_count = "dws_pl_dialog_message_service_all"
+in_table_dialog_status = "dws_pl_dialog_pat_status_all"
+
+# 社区行为分析
+in_table_post_count = "ads_pl_sq_post_interaction_count_period_all"
+in_table_post_prefer = "ads_pl_sq_post_interaction_prefer_period_all"
+in_table_article_count = "ads_pl_sq_article_interaction_count_period_all"
+in_table_article_prefer = "ads_pl_sq_article_interaction_prefer_period_all"
+in_table_content_prefer = "ads_pl_sq_content_prefer_period_all"
+
+# 消费行为分析
+in_table_consume_count = "ads_pl_consume_frequency_period_all"
+in_table_consume_status = "dws_pl_consume_status_info_all"
+
+# 总用户人数
+out_table_name = "ads_pl_user_paintings_all"
+
+
+def main():
+    odf_pid = DataFrame(odps.get_table(in_table_name_pid))
+    pdf_pid = odf_pid.to_pandas()
+
+    odf_static_status = DataFrame(odps.get_table(in_table_static_status))
+    pdf_static_status = odf_static_status.to_pandas()
+
+    odf_app_status = DataFrame(odps.get_table(in_table_app_status))
+    pdf_app_status = odf_app_status.to_pandas()
+    odf_app_open = DataFrame(odps.get_table(in_table_app_open))
+    pdf_app_open = odf_app_open.to_pandas()
+
+    odf_dialog_count = DataFrame(odps.get_table(in_table_dialog_count))
+    pdf_dialog_count = odf_dialog_count.to_pandas()
+    odf_dialog_status = DataFrame(odps.get_table(in_table_dialog_status))
+    pdf_dialog_status = odf_dialog_status.to_pandas()
+
+    odf_post_count = DataFrame(odps.get_table(in_table_post_count))
+    pdf_post_count = odf_post_count.to_pandas()
+    odf_post_prefer = DataFrame(odps.get_table(in_table_post_prefer))
+    pdf_post_prefer = odf_post_prefer.to_pandas()
+    odf_article_count = DataFrame(odps.get_table(in_table_article_count))
+    pdf_article_count = odf_article_count.to_pandas()
+    odf_article_prefer = DataFrame(odps.get_table(in_table_article_prefer))
+    pdf_article_prefer = odf_article_prefer.to_pandas()
+    odf_content_prefer = DataFrame(odps.get_table(in_table_content_prefer))
+    pdf_content_prefer = odf_content_prefer.to_pandas()
+
+    odf_consume_count = DataFrame(odps.get_table(in_table_consume_count))
+    pdf_consume_count = odf_consume_count.to_pandas()
+    odf_consume_status = DataFrame(odps.get_table(in_table_consume_status))
+    pdf_consume_status = odf_consume_status.to_pandas()
+
+    grouped = pdf_pid.groupby('pid')
+    result = list()
+    # 计算
+    for pid, group in grouped:
+        records = list()
+        static_records = static_status(pid, pdf_static_status)
+        app_records = app_analyses(pid, pdf_app_status, pdf_app_open)
+        dialog_records = dialog_analyses(pid, pdf_dialog_status, pdf_dialog_count)
+        sq_records = sq_analyses(pid, pdf_post_count, pdf_post_prefer, pdf_article_count, pdf_article_prefer,
+                                 pdf_content_prefer)
+        consume_records = consume_analyses(pid, pdf_consume_status, pdf_consume_count)
+        if static_records is not None and app_records is not None or dialog_records is not None or sq_records is not None or consume_records is not None:
+            records.append([
+                pid,
+                static_records,
+                app_records,
+                dialog_records,
+                sq_records,
+                consume_records,
+                None,
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            ])
+            result.extend(records)
+    writer_odps(result)
+
+
+def static_status(pid, pdf_status):
+    records = list()
+    status_dict = {"gender": None,
+                   "age_group_code": None,
+                   "height": None,
+                   "weight": None,
+                   "bmi": None,
+                   "area_province": None,
+                   "register_time": None,
+                   "product_code": None,
+                   "ckd_code": None
+                   }
+    user_static_status = dict()
+    for item_status in pdf_status.itertuples():
+        if pid == item_status.pid:
+            status_dict['gender'] = item_status.gender
+            status_dict['age_group_code'] = item_status.age_group_code
+            status_dict['area_province'] = item_status.area_province
+            status_dict['register_time'] = item_status.register_time
+            status_dict['product_code'] = item_status.product_code
+            status_dict['ckd_code'] = item_status.ckd_code
+            if item_status.height is not None:
+                status_dict['height'] = int(item_status.height)
+            if item_status.weight is not None:
+                status_dict['weight'] = int(item_status.weight)
+            if item_status.bmi is not None:
+                status_dict['bmi'] = int(item_status.bmi)
+    # records.append([
+    #     pid,
+
+    # ])
+    return json.dumps(status_dict)
+
+
+def app_analyses(pid, pdf_status, pdf_period):
+    records = list()
+    status_dict = {"os_name": None,
+                   "recent_active_date": None,
+                   "is_open_h5": None,
+                   "is_open_app": None,
+                   "is_open_miniapp": None,
+                   "high_open_range": None,
+                   "push_open_rate": None,
+                   "active_code": None,
+                   "app_open_period": None}
+    open_dict = dict()
+    for item_status in pdf_status.itertuples():
+        if pid == item_status.pid:
+            status_dict['os_name'] = item_status.os_name
+            status_dict['recent_active_date'] = item_status.recent_active_date
+            status_dict['is_open_h5'] = item_status.is_open_h5
+            status_dict['is_open_app'] = item_status.is_open_app
+            status_dict['is_open_miniapp'] = item_status.is_open_miniapp
+            status_dict['high_open_range'] = item_status.high_open_range
+            status_dict['push_open_rate'] = item_status.push_open_rate
+            status_dict['active_code'] = item_status.active_code
+
+    for item_open in pdf_period.itertuples():
+        if pid == item_open.pid:
+            open_dict[item_open.period] = item_open.app_open_count
+
+    status_dict['app_open_period'] = json.dumps(open_dict)
+    # records.append([
+    #     pid,
+
+    # ])
+    return json.dumps(status_dict)
+
+
+def dialog_analyses(pid, pdf_status, pdf_period):
+    records = list()
+    status_dict = {"tc_code": None,
+                   "tc_code_tag": None,
+                   "is_manage": None,
+                   "jihuo_status": None,
+                   "ruzu_status": None,
+                   "reason": None,
+                   "feldsher_msg_count": None,
+                   "doctor_msg_count": None,
+                   "svc_msg_count": None,
+                   "feldsher_day_count": None,
+                   "doctor_day_count": None,
+                   "svc_day_count": None
+                   }
+    feldsher_msg_count = doctor_msg_count = svc_msg_count = feldsher_day_count = doctor_day_count = svc_day_count = dict()
+    for item_status in pdf_status.itertuples():
+        if pid == item_status.pid:
+            status_dict['tc_code'] = item_status.tc_code
+            status_dict['tc_code_tag'] = item_status.tc_code_tag
+            status_dict['is_manage'] = item_status.is_manage
+            status_dict['jihuo_status'] = item_status.jihuo_status
+            status_dict['ruzu_status'] = item_status.ruzu_status
+            status_dict['reason'] = item_status.reason
+
+    for item_open in pdf_period.itertuples():
+        if pid == item_open.pid:
+            feldsher_msg_count[item_open.period] = item_open.feldsher_msg_count
+            doctor_msg_count[item_open.period] = item_open.doctor_msg_count
+            svc_msg_count[item_open.period] = item_open.svc_msg_count
+            feldsher_day_count[item_open.period] = item_open.feldsher_day_count
+            doctor_day_count[item_open.period] = item_open.doctor_day_count
+            svc_day_count[item_open.period] = item_open.svc_day_count
+
+    status_dict['feldsher_msg_count'] = json.dumps(feldsher_msg_count)
+    status_dict['doctor_msg_count'] = json.dumps(doctor_msg_count)
+    status_dict['svc_msg_count'] = json.dumps(svc_msg_count)
+    status_dict['feldsher_day_count'] = json.dumps(feldsher_day_count)
+    status_dict['doctor_day_count'] = json.dumps(doctor_day_count)
+    status_dict['svc_day_count'] = json.dumps(svc_day_count)
+    # records.append([
+    #     pid,
+
+    # ])
+    return json.dumps(status_dict)
+
+
+def sq_analyses(pid, pdf_post_count, pdf_post_prefer, pdf_article_count, pdf_article_prefer, pdf_content_prefer):
+    records = list()
+    status_dict = {"keyword_list": None,
+                   "post_interaction_count": None,
+                   "post_interaction_prefer": None,
+                   "article_interaction_count": None,
+                   "article_interaction_prefer": None
+                   }
+    pdf_post_count_grouped = pdf_post_count.groupby('pec_behavior_type')
+    pdf_article_count_grouped = pdf_article_count.groupby('pec_behavior_type')
+    pdf_post_prefer_grouped = pdf_post_prefer.groupby('pec_behavior_type')
+    pdf_article_prefer_grouped = pdf_article_prefer.groupby('pec_behavior_type')
+    post_interaction_count = post_interaction_prefer = article_interaction_count = article_interaction_prefer = dict()
+
+    for item_status in pdf_content_prefer.itertuples():
+        if pid == item_status.pid:
+            status_dict['keyword_list'] = item_status.keyword_list
+
+    for pec_behavior_type, group in pdf_post_count_grouped:
+        post_interaction_count_1 = dict()
+        for item in group.itertuples():
+            if pid == item.pid:
+                post_interaction_count_1[item.period] = item.interaction_count
+        post_interaction_count[pec_behavior_type] = post_interaction_count_1
+
+    for pec_behavior_type, group in pdf_article_count_grouped:
+        article_interaction_count_1 = dict()
+        for item in group.itertuples():
+            if pid == item.pid:
+                article_interaction_count_1[item.period] = item.interaction_count
+        article_interaction_count[pec_behavior_type] = article_interaction_count_1
+
+    for pec_behavior_type, group in pdf_post_prefer_grouped:
+        post_interaction_prefer_1 = dict()
+        group_title = group.groupby('topic_title')
+        for topic_title, group_1 in group_title:
+            post_interaction_prefer_2 = dict()
+            for item in group_1.itertuples():
+                if pid == item.pid:
+                    post_interaction_prefer_2[item.period] = item.interaction_count
+            post_interaction_prefer_1[topic_title] = post_interaction_prefer_2
+        post_interaction_prefer[pec_behavior_type] = post_interaction_prefer_1
+
+    for pec_behavior_type, group in pdf_article_prefer_grouped:
+        article_interaction_prefer_1 = dict()
+        group_title = group.groupby('classifications')
+        for classifications, group_1 in group_title:
+            article_interaction_prefer_2 = dict()
+            for item in group_1.itertuples():
+                if pid == item.pid:
+                    article_interaction_prefer_2[item.period] = item.interaction_count
+            article_interaction_prefer_1[classifications] = article_interaction_prefer_2
+        article_interaction_prefer[pec_behavior_type] = article_interaction_prefer_1
+
+    status_dict['post_interaction_count'] = json.dumps(post_interaction_count)
+    status_dict['post_interaction_prefer'] = json.dumps(post_interaction_prefer)
+    status_dict['article_interaction_count'] = json.dumps(article_interaction_count)
+    status_dict['article_interaction_prefer'] = json.dumps(article_interaction_prefer)
+
+    # records.append([
+    #     pid,
+
+    # ])
+    return json.dumps(status_dict)
+
+
+def consume_analyses(pid, pdf_status, pdf_period):
+    records = list()
+    status_dict = {"total_fee_sum": None,
+                   "total_fee_count": None,
+                   "unit_fee_sum": None,
+                   "ticket_sensitive_level": None,
+                   "total_kpoint_count": None,
+                   "wechat_platform_count": None,
+                   "alipay_platform_count": None,
+                   "pay_status": None,
+                   "current_pay_time": None,
+                   "speccode_list": None,
+                   "history_tc_code": None,
+                   "current_tc_code": None,
+                   "history_policy_code": None,
+                   "current_policy_code": None,
+                   "consume_frequency_period": None
+                   }
+    consume_frequency_period = dict()
+    for item_status in pdf_status.itertuples():
+        if pid == item_status.pid:
+            status_dict['total_fee_sum'] = item_status.total_fee_sum
+            status_dict['total_fee_count'] = item_status.total_fee_count
+            status_dict['unit_fee_sum'] = item_status.unit_fee_sum
+            status_dict['ticket_sensitive_level'] = item_status.ticket_sensitive_level
+            status_dict['total_kpoint_count'] = item_status.total_kpoint_count
+            status_dict['wechat_platform_count'] = item_status.wechat_platform_count
+            status_dict['alipay_platform_count'] = item_status.alipay_platform_count
+            status_dict['pay_status'] = item_status.pay_status
+            status_dict['current_pay_time'] = item_status.current_pay_time
+            status_dict['speccode_list'] = item_status.speccode_list
+            status_dict['history_tc_code'] = item_status.history_tc_code
+            status_dict['current_tc_code'] = item_status.current_tc_code
+            status_dict['history_policy_code'] = item_status.history_policy_code
+            status_dict['current_policy_code'] = item_status.current_policy_code
+    for item in pdf_period.itertuples():
+        if pid == item.pid:
+            consume_frequency_period[item.period] = item.consume_count
+
+    status_dict['consume_frequency_period'] = json.dumps(consume_frequency_period)
+    # records.append([
+    #     pid,
+
+    # ])
+    return json.dumps(status_dict)
+
+
+def writer_odps(result):
+    """
+    写入数据
+    :return:
+    """
+    # dt = datetime.strptime(next_dt,'%Y%m%d').strftime('%Y%m%d')
+    odps.delete_table(out_table_name, if_exists=True)
+    table = odps.create_table(out_table_name,
+                              'pid string, static_status string, dialog_message_analyses string, app_use_analyses string, consume_behavior_analyses string, sq_behavior_analyses string, yl_behavior_analyses string, ods_rksj string, ods_update string',
+                              if_not_exists=True)
+    table = odps.get_table(out_table_name)
+    # table.delete_partition(f'dt={dt}', if_exists=True)
+    if len(result) > 0:
+        odps.write_table(out_table_name, result)
+        print(f'入库完成{len(result)}')
+    if len(result) == 0:
+        print('入库失败没有数据')
+
+
+if __name__ == "__main__":
+    # main(args['next_dt'])
+    main()
