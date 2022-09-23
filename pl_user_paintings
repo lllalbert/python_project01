@@ -16,13 +16,6 @@ from datetime import datetime
 import traceback
 import math
 import uuid
-options.tunnel.use_instance_tunnel = True;
-access_id = 'LTAI5t79ZWE4bcUF57W2E7Lg'
-access_secret = 'zkJK5UiRes4HzZgMQhfMZfn7jAEWZJ'
-project_name = 'kidneydataworks_dev'##开发版
-endpoint = 'http://service.cn-beijing.maxcompute.aliyun.com/api'
-odps = ODPS(access_id, access_secret, project_name, endpoint)
-
 
 in_table_name_pid = "dim_patient_info_all"
 
